@@ -1,5 +1,6 @@
-# app.py (Deluxe GUI - updated)
-# Adds: project save/load, batch export queue, chroma-key UI, vocoder toggle, GIF loop/fps controls.
+# app.py (Deluxe GUI - fixed)
+# Bug fix: implement _load_presets method so constructor call doesn't fall back to tkinter.__getattr__
+# and raise AttributeError. This version adds _load_presets back into the FreePoopApp class.
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
@@ -22,7 +23,7 @@ try:
 except Exception:
     stt_mod = None
 
-APP_TITLE = "FreePoop V2 - Deluxe (updated)"
+APP_TITLE = "FreePoop V2 - Deluxe (updated, fixed)"
 
 class FreePoopApp(tk.Tk):
     def __init__(self):
@@ -31,10 +32,54 @@ class FreePoopApp(tk.Tk):
         self.geometry("1200x760")
         self.adaptor = YTPFFmpegAdaptor()
         self.presets = {}
+        # load presets before building UI so UI can reflect presets if needed
         self._load_presets()
         self.batch_jobs = []  # list of (out_path, preset_name)
         self._build_ui()
 
+    # ----------------- Presets -----------------
+    def _load_presets(self):
+        """
+        Load presets.json from the same directory as this script.
+        If the file does not exist or fails to parse, fall back to builtin presets.
+        """
+        try:
+            here = Path(__file__).resolve().parent
+            presets_file = here / "presets.json"
+            if presets_file.exists():
+                with presets_file.open("r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                    self.presets = data.get("presets", {})
+                    return
+        except Exception as e:
+            # Log to console; GUI log may not be available yet
+            print(f"[FreePoopApp] warning loading presets.json: {e}", file=sys.stderr)
+
+        # Fallback builtin presets
+        self.presets = {
+            "classic (2006-2009)": {
+                "stutter": True, "stutter_ms": 120, "stutter_repeats": 6,
+                "scramble": True, "scramble_segments": 8, "reverse": False,
+                "pitch_semitones": 3
+            },
+            "early-era (2010-2014)": {
+                "stutter": True, "stutter_ms": 120, "stutter_repeats": 6,
+                "scramble": True, "scramble_segments": 8, "reverse": True,
+                "pitch_semitones": -2
+            },
+            "mid-era (2015-2020)": {
+                "stutter": False, "stutter_ms": 120, "stutter_repeats": 6,
+                "scramble": True, "scramble_segments": 10, "reverse": False,
+                "pitch_semitones": 0
+            },
+            "modern (2025)": {
+                "stutter": True, "stutter_ms": 80, "stutter_repeats": 3,
+                "scramble": False, "scramble_segments": 6, "reverse": True,
+                "pitch_semitones": -5
+            }
+        }
+
+    # ---------------- UI building ----------------
     def _build_ui(self):
         # Menu
         menubar = tk.Menu(self)
@@ -330,6 +375,8 @@ class FreePoopApp(tk.Tk):
         random.seed(int(time.time()) & 0xFFFF)
         words = text.split()
         n = len(words)
+        if n <= 1:
+            return text
         swaps = max(1, int(n * intensity * 0.5))
         for _ in range(swaps):
             i = random.randrange(n)
@@ -355,10 +402,7 @@ class FreePoopApp(tk.Tk):
             return
         # update effects
         self.update_effects()
-        # allow vocoder plugin usage
-        if self.chk_vocoder.get() and self.adaptor.plugin_manager:
-            # plugin should be enabled and will be called by adaptor on_before_export hook if present
-            pass
+        # allow vocoder plugin usage (plugin logic handled in adaptor/plugin manager)
         def run_export(outp):
             self.log(f"Export started: {outp}")
             proc = self.adaptor.export(outp)
@@ -375,17 +419,14 @@ class FreePoopApp(tk.Tk):
         folder = filedialog.askdirectory(title="Select output folder for batch exports")
         if not folder:
             return
-        # ask for number of variations or pick presets
         dlg = tk.Toplevel(self)
         dlg.title("Batch export settings")
         tk.Label(dlg, text="Number of outputs").pack(padx=8, pady=6)
         spin = tk.Spinbox(dlg, from_=1, to=64, width=6); spin.delete(0, "end"); spin.insert(0, "3"); spin.pack(padx=8)
         def on_ok():
             n = int(spin.get())
-            # create n outputs with incremental names and run exports in parallel threads
             for i in range(n):
                 outp = Path(folder) / f"freepoop_batch_{i+1}.mp4"
-                # optionally vary a parameter (small randomization) - here, vary pitch slightly
                 import random
                 pitch = (i - n//2) * 0.5
                 self.adaptor.set_effect("pitch_semitones", pitch)
@@ -405,8 +446,12 @@ class FreePoopApp(tk.Tk):
     # ---------------- Utilities ----------------
     def log(self, text: str):
         ts = time.strftime("%H:%M:%S")
-        self.txt_log.insert("end", f"[{ts}] {text}\n")
-        self.txt_log.see("end")
+        try:
+            self.txt_log.insert("end", f"[{ts}] {text}\n")
+            self.txt_log.see("end")
+        except Exception:
+            # if log widget not yet ready, print to stderr
+            print(f"[{ts}] {text}", file=sys.stderr)
 
 if __name__ == "__main__":
     app = FreePoopApp()
