@@ -1,0 +1,28 @@
+{
+  "presets": {
+    "classic (2006-2009)": {
+      "stutter": true,
+      "scramble": true,
+      "reverse": false,
+      "pitch_semitones": 3
+    },
+    "early-era (2010-2014)": {
+      "stutter": true,
+      "scramble": true,
+      "reverse": true,
+      "pitch_semitones": -2
+    },
+    "mid-era (2015-2020)": {
+      "stutter": false,
+      "scramble": true,
+      "reverse": false,
+      "pitch_semitones": 0
+    },
+    "modern (2025)": {
+      "stutter": true,
+      "scramble": false,
+      "reverse": true,
+      "pitch_semitones": -5
+    }
+  }
+}
